@@ -9,10 +9,14 @@ use std::io::{Cursor, Read, Write, stdin};
 use byteorder::{LittleEndian, ReadBytesExt};
 use rand::random;
 
+// Type for designating memory locations (usize for easy indexing)
 type Addr = usize;
+// Type for designating values at memory locations
 type Val = u16;
+// Type for opcode arguments
 type Arg = u16;
 
+// Represents all the existing opcodes of the arch spec
 #[derive(Debug)]
 enum Op {
     Halt,
@@ -39,6 +43,7 @@ enum Op {
     Noop
 }
 
+// Nice display for the disassembler and tracer
 fn fmt_arg(arg: Arg) -> String {
     if arg < 32768 {
         format!("{:x}", arg)
@@ -48,9 +53,10 @@ fn fmt_arg(arg: Arg) -> String {
 }
 
 impl fmt::Display for Op {
+    // The format here is pretty arbitrary
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Op::Halt => write!(fmt, "hlt"),
+            Op::Halt => write!(fmt, "halt"),
             Op::Set(t, v) => write!(fmt, "{} <- {}", fmt_arg(t), fmt_arg(v)),
             Op::Push(v) => write!(fmt, "push {}", fmt_arg(v)),
             Op::Pop(r) => write!(fmt, "{} <- pop", fmt_arg(r)),
@@ -76,6 +82,8 @@ impl fmt::Display for Op {
     }
 }
 
+// Represents the VM with all its internal state (mainly registers, stack and
+// memory), input and output buffers, and a few flags
 struct VM {
     regs:   [Val; 8],
     stack:  Vec<Val>,
@@ -101,6 +109,7 @@ impl VM {
         }
     }
 
+    // Read a program into memory (always at location 0)
     fn load(&mut self, program: Vec<u8>) {
         let mut cursor = Cursor::new(program);
         let mut i = 0;
@@ -110,6 +119,7 @@ impl VM {
         }
     }
 
+    // Run (or continue) from the location of "lastip"
     fn run(&mut self) {
         let mut ip = self.lastip;
         loop {
@@ -122,12 +132,14 @@ impl VM {
         }
     }
 
+    // Retrieve one value from memory and update the instruction pointer
     fn next(&self, ip: &mut Addr) -> Val {
         let res = self.mem[*ip];
         *ip += 1;
         res
     }
 
+    // Decode one instruction and update the instruction pointer
     fn decode(&self, ip: &mut Addr) -> Op {
         match self.next(ip) {
             0  => Op::Halt,
@@ -156,6 +168,7 @@ impl VM {
         }
     }
 
+    // An lvalue reference to a register
     fn reg(&mut self, arg: Arg) -> &mut Val {
         if 32768 <= arg && arg < 32776 {
             &mut self.regs[(arg - 32768) as usize]
@@ -164,6 +177,8 @@ impl VM {
         }
     }
 
+    // An rvalue reference to either a register or immediate value
+    // (memory locations are not supported as general purpose operands)
     fn val(&self, arg: Arg) -> Val {
         if arg < 32768 {
             arg
@@ -174,6 +189,7 @@ impl VM {
         }
     }
 
+    // Exceute one instruction/opcode
     fn exec(&mut self, op: Op, mut nextip: Addr) -> Option<Addr> {
         if self.disasm {
             println!("\t[{:06x}] {}", self.lastip, op);
@@ -200,6 +216,7 @@ impl VM {
             Op::Ret => { let a = self.stack.pop(); if a.is_none() { return None }
                          nextip = a.unwrap() as Addr; },
             Op::Out(v) => { let c = self.val(v); self.putc(c) },
+            // If the "readin" flag is false, we stop upon encountering an empty input queue
             Op::In(r) => { if self.inbuf.is_empty() && !self.readin { return None; }
                            *self.reg(r) = self.getc(); },
             Op::Noop => (),
@@ -207,14 +224,17 @@ impl VM {
         Some(nextip)
     }
 
+    // Output a character (to stdout and into a buffer for inspection)
     fn putc(&mut self, c: Val) {
         let c = char::from_u32(c as u32).unwrap();
         print!("{}", c);
         write!(self.outbuf, "{}", c).unwrap();
     }
 
+    // Input a character (reads a new line from stdin if buffer is empty)
     fn getc(&mut self) -> Val {
         match self.inbuf.pop_front() {
+            // No input available => read line and recurse
             None => {
                 let mut line = String::new();
                 stdin().read_line(&mut line).unwrap();
@@ -223,6 +243,8 @@ impl VM {
                 }
                 self.getc()
             }
+            // The special mark that causes the memory manipulation
+            // necessary to circumvent the teleporter checking code
             Some(b'#') => {
                 self.mem[0x1571] = 21;  // bypass confirmation
                 self.mem[0x1572] = 21;
@@ -238,6 +260,7 @@ impl VM {
     }
 }
 
+// Helper for finding a path through the twisty maze
 #[allow(unused)]
 fn maze_step(vm: &mut VM, steps: &mut Vec<&'static str>) {
     let direction = ["north", "west", "south", "east"][random::<usize>() % 4];
@@ -274,6 +297,9 @@ fn main() {
     let mut vm = VM::new(false);
     let mut prog = Vec::new();
     File::open("../challenge.bin").unwrap().read_to_end(&mut prog).unwrap();
+
+    // This sequence is the result of completing all necessary puzzles and leads
+    // directly to the end of the challenge
     vm.inbuf.extend(b"take tablet
 use tablet
 go doorway
