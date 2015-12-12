@@ -1,0 +1,4 @@
+[package]
+name = "ack"
+version = "0.1.0"
+authors = ["Georg Brandl <georg@python.org>"]
